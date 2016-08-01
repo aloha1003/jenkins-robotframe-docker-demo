@@ -1,0 +1,9 @@
+  name: rubuckwirless-demo
+  hostname: rubuckwirless.docker.local
+  box: ubuntu/trusty64
+  provider: virtualbox
+  gui: false
+  ram: 1024
+  cpus: 1
+  ip: 10.10.11.100
+  projects-folder: "."

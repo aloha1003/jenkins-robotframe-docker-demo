@@ -1,0 +1,17 @@
+jenkins:
+    environment:
+      JAVA_OPTS: "-Djava.awt.headless=true"
+      ENV DISPLAY: ":1.0"
+      ENV ROBOT_TESTS: "/testing/"
+      JENKINS_HOME: "/var/jenkins_home"
+    ports:
+      - "8080:8080"
+      - "5000:5000"
+    volumes:
+      - ./jenkins_home:/var/jenkins_home
+    build: .
+
+
+
+
+
