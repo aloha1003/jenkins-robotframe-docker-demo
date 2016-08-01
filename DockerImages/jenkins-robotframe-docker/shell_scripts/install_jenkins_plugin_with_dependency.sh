@@ -28,71 +28,81 @@ COUNT_PLUGINS_INSTALLED=0
 installPlugin() {
   pluginName=$(echo $1 | cut -f1 -d :)
   version=$(echo $1 | cut -f2 -d :)
-  if [ "$pluginName" == "$version" ]; then
+
+   if [ "$pluginName" == "$version" ]; then
       version="latest"
+      searchKey="${pluginName}:"
+  else
+      if [ "$version" == "latest" ]; then
+          searchKey="${pluginName}:"
+      else
+          searchKey="${pluginName}:${version}"
+      fi          
   fi
-  if  grep -q "${pluginName}:${version}" $TEMP_ALREADY_INSTALLED; then
+
+  if  grep -q "$searchKey" $TEMP_ALREADY_INSTALLED; then
     if [ "$2" == "1" ]; then
       return 1
     fi
-    echo "Skipped: $1 (already installed)"
+    echo "Skipped: $pluginName (already installed)"
     return 0
   else
     echo "Downloading: $1"
-    curl --retry 3 --retry-delay 5 -sSL -f  https://updates.jenkins-ci.org/download/plugins/${pluginName}/${version}/${pluginName}.hpi -o $REF/${pluginName}.jpi
+    curl --retry 3 --retry-delay 5 -sSL -f  https://updates.jenkins-ci.org/download/plugins/${pluginName}/${version}/${pluginName}.hpi -o ${plugin_dir}/${pluginName}.jpi
     #curl -L --silent --output ${plugin_dir}/${1}.hpi  https://updates.jenkins-ci.org/latest/${1}.hpi
-
-    unzip -qqt $REF/${pluginName}.jpi
-    echo "Installing: $1"
+    unzip -qqt ${plugin_dir}/${pluginName}.jpi
     
-    cp $REF/${pluginName}.jpi ${plugin_dir}/${pluginName}.hpi
     echo "Check for missing dependecies ..."
 
     # without optionals
     #deps=$( unzip -p ${f} META-INF/MANIFEST.MF | tr -d '\r' | sed -e ':a;N;$!ba;s/\n //g' | grep -e "^Plugin-Dependencies: " | awk '{ print $2 }' | tr ',' '\n' | grep -v "resolution:=optional" | awk -F ':' '{ print $1 }' | tr '\n' ' ' )
     # with optionals
-    deps=$( unzip -p $REF/${pluginName}.jpi META-INF/MANIFEST.MF | tr -d '\r' | sed -e ':a;N;$!ba;s/\n //g' | grep -e "^Plugin-Dependencies: " | awk '{ print $2 }' | tr ',' '\n' | awk -F ':' '{ print $1 }' | tr '\n' ' ' )
+    deps=$( unzip -p ${plugin_dir}/${pluginName}.jpi META-INF/MANIFEST.MF | tr -d '\r' | sed -e ':a;N;$!ba;s/\n //g' | grep -e "^Plugin-Dependencies: " | awk '{ print $2 }' | tr ',' '\n' | awk -F ':' '{ print $1 }' | tr '\n' ' ' )
     for plugin in $deps; do
       installPlugin "$plugin" 
     done
-      
+    echo "Unzip ${pluginName}"
+       unzip -qq -o -x ${plugin_dir}/${pluginName}.jpi -d ${plugin_dir}/${pluginName}
+    AnalyzingPlugin
     return 0
   fi
 }
 
-
-
-if [ -d $plugin_dir ]
-then
-    echo "Analyzing: $plugin_dir"
-    for i in `ls -pd1 $plugin_dir/*|egrep '\/$'`
-    do
-        JENKINS_PLUGIN=`basename $i`
-        JENKINS_PLUGIN_VER=`egrep -i Plugin-Version "$i/META-INF/MANIFEST.MF"|cut -d\: -f2|sed 's/ //'`
-        echo "$JENKINS_PLUGIN:$JENKINS_PLUGIN_VER"
-    done > $TEMP_ALREADY_INSTALLED
-else
-    JENKINS_WAR=/usr/share/jenkins/jenkins.war
-    if [ -f $JENKINS_WAR ]
+AnalyzingPlugin() {
+    if [ -d $plugin_dir ]
     then
-        echo "Analyzing war: $JENKINS_WAR"
-        TEMP_PLUGIN_DIR=/tmp/plugintemp.$$
-        for i in `jar tf $JENKINS_WAR|egrep 'plugins'|egrep -v '\/$'|sort`
+        echo "Analyzing: $plugin_dir"
+        for i in `ls -pd1 $plugin_dir/*|egrep '\/$'`
         do
-            rm -fr $TEMP_PLUGIN_DIR
-            mkdir -p $TEMP_PLUGIN_DIR
-            PLUGIN=`basename $i|cut -f1 -d'.'`
-            (cd $TEMP_PLUGIN_DIR;jar xf $JENKINS_WAR "$i";jar xvf $TEMP_PLUGIN_DIR/$i META-INF/MANIFEST.MF >/dev/null 2>&1)
-            VER=`egrep -i Plugin-Version "$TEMP_PLUGIN_DIR/META-INF/MANIFEST.MF"|cut -d\: -f2|sed 's/ //'`
-            echo "$PLUGIN:$VER"
+            JENKINS_PLUGIN=`basename $i`
+            JENKINS_PLUGIN_VER=`egrep -i Plugin-Version "$i/META-INF/MANIFEST.MF"|cut -d\: -f2|sed 's/ //'`
+            echo "$JENKINS_PLUGIN:$JENKINS_PLUGIN_VER"
         done > $TEMP_ALREADY_INSTALLED
-        rm -fr $TEMP_PLUGIN_DIR
     else
-        rm -f $TEMP_ALREADY_INSTALLED
-        echo "ERROR file not found: $JENKINS_WAR"
-        exit 1
+        JENKINS_WAR=/usr/share/jenkins/jenkins.war
+        if [ -f $JENKINS_WAR ]
+        then
+            echo "Analyzing war: $JENKINS_WAR"
+            TEMP_PLUGIN_DIR=/tmp/plugintemp.$$
+            for i in `jar tf $JENKINS_WAR|egrep 'plugins'|egrep -v '\/$'|sort`
+            do
+                rm -fr $TEMP_PLUGIN_DIR
+                mkdir -p $TEMP_PLUGIN_DIR
+                PLUGIN=`basename $i|cut -f1 -d'.'`
+                (cd $TEMP_PLUGIN_DIR;jar xf $JENKINS_WAR "$i";jar xvf $TEMP_PLUGIN_DIR/$i META-INF/MANIFEST.MF >/dev/null 2>&1)
+                VER=`egrep -i Plugin-Version "$TEMP_PLUGIN_DIR/META-INF/MANIFEST.MF"|cut -d\: -f2|sed 's/ //'`
+                echo "$PLUGIN:$VER"
+            done > $TEMP_ALREADY_INSTALLED
+            rm -fr $TEMP_PLUGIN_DIR
+        else
+            rm -f $TEMP_ALREADY_INSTALLED
+            echo "ERROR file not found: $JENKINS_WAR"
+            exit 1
+        fi
     fi
-fi
+}
+
+AnalyzingPlugin
 
 
 while IFS='' read -r line || [[ -n "$line" ]]; do
